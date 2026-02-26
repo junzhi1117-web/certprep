@@ -9,13 +9,15 @@ interface QuizResultProps {
     total: number;
     timeSpent: number;
     scorePercent: number;
+    wrongQuestions?: number[];
   };
   topicTitle: string;
   onRetake: () => void;
   onBack: () => void;
+  onReview?: () => void;
 }
 
-export function QuizResult({ results, topicTitle, onRetake, onBack }: QuizResultProps) {
+export function QuizResult({ results, topicTitle, onRetake, onBack, onReview }: QuizResultProps) {
   const { correct, wrong, skipped, total, timeSpent, scorePercent } = results;
 
   const badge = scorePercent >= 90
@@ -95,6 +97,19 @@ export function QuizResult({ results, topicTitle, onRetake, onBack }: QuizResult
         <button className="btn-primary" onClick={onRetake}>
           Retake Quiz
         </button>
+        {onReview && wrong > 0 && (
+          <button
+            className="btn-secondary"
+            style={{
+              background: '#FFF3E0',
+              color: '#E67E00',
+              borderColor: '#E67E00',
+            }}
+            onClick={onReview}
+          >
+            🔁 Review Wrong Answers ({wrong})
+          </button>
+        )}
         <button className="btn-secondary" onClick={onBack}>
           Back to Topics
         </button>

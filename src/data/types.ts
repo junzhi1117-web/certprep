@@ -47,4 +47,6 @@ export interface AppSettings {
 
 export type AnswerState = 'idle' | 'correct' | 'wrong';
 
+export type QuizMode = 'normal' | 'review';
+
 export type Page = 'home' | 'study' | 'quiz' | 'quiz-result' | 'progress' | 'settings';

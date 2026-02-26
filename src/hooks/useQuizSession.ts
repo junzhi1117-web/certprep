@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { Question } from '../data/types';
 
 export type AnswerState = 'unanswered' | 'correct' | 'wrong';
@@ -17,10 +17,98 @@ export interface QuizSession {
   showExplanation: boolean;
 }
 
-export function useQuizSession(allQuestions: Question[], count: number, shuffle: boolean) {
+interface SavedSession {
+  questionIds: number[];
+  currentIndex: number;
+  questionStates: { selected: string | null; state: 'unanswered' | 'correct' | 'wrong' }[];
+  elapsedSeconds: number;
+  savedAt: string;
+}
+
+function sessionKey(topicId: string) {
+  return `certprep-session-${topicId}`;
+}
+
+export function hasSavedSession(topicId: string): boolean {
+  try {
+    const raw = localStorage.getItem(sessionKey(topicId));
+    return raw !== null;
+  } catch {
+    return false;
+  }
+}
+
+export function getSavedSessionInfo(topicId: string): { currentIndex: number; total: number } | null {
+  try {
+    const raw = localStorage.getItem(sessionKey(topicId));
+    if (!raw) return null;
+    const saved: SavedSession = JSON.parse(raw);
+    return { currentIndex: saved.currentIndex, total: saved.questionIds.length };
+  } catch {
+    return null;
+  }
+}
+
+export function clearSavedSession(topicId: string) {
+  localStorage.removeItem(sessionKey(topicId));
+}
+
+function loadSavedSession(topicId: string): SavedSession | null {
+  try {
+    const raw = localStorage.getItem(sessionKey(topicId));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveSessionToStorage(topicId: string, session: QuizSession, elapsedSeconds: number) {
+  const data: SavedSession = {
+    questionIds: session.questions.map(q => q.id),
+    currentIndex: session.currentIndex,
+    questionStates: session.questionStates,
+    elapsedSeconds,
+    savedAt: new Date().toISOString(),
+  };
+  localStorage.setItem(sessionKey(topicId), JSON.stringify(data));
+}
+
+export function useQuizSession(
+  allQuestions: Question[],
+  count: number,
+  shuffle: boolean,
+  topicId: string,
+  shouldRestore: boolean = true,
+) {
   const startTimeRef = useRef(Date.now());
+  const restoredElapsedRef = useRef(0);
 
   const [session, setSession] = useState<QuizSession>(() => {
+    // Try to restore saved session
+    if (shouldRestore) {
+      const saved = loadSavedSession(topicId);
+      if (saved) {
+        const questionMap = new Map(allQuestions.map(q => [q.id, q]));
+        const restoredQuestions = saved.questionIds
+          .map(id => questionMap.get(id))
+          .filter((q): q is Question => q !== undefined);
+
+        if (restoredQuestions.length === saved.questionIds.length) {
+          restoredElapsedRef.current = saved.elapsedSeconds;
+          return {
+            questions: restoredQuestions,
+            currentIndex: saved.currentIndex,
+            questionStates: saved.questionStates,
+            isFinished: false,
+            startTime: Date.now(),
+            showExplanation: false,
+          };
+        }
+        // Mismatch — clear stale session and start fresh
+        clearSavedSession(topicId);
+      }
+    }
+
     let questions = [...allQuestions];
     if (shuffle) {
       questions = questions.sort(() => Math.random() - 0.5);
@@ -30,12 +118,19 @@ export function useQuizSession(allQuestions: Question[], count: number, shuffle:
     return {
       questions,
       currentIndex: 0,
-      questionStates: questions.map(() => ({ selected: null, state: 'unanswered' })),
+      questionStates: questions.map(() => ({ selected: null, state: 'unanswered' as const })),
       isFinished: false,
       startTime: Date.now(),
       showExplanation: false,
     };
   });
+
+  // Save session to localStorage on state changes
+  useEffect(() => {
+    if (session.isFinished) return;
+    const elapsed = restoredElapsedRef.current + Math.floor((Date.now() - startTimeRef.current) / 1000);
+    saveSessionToStorage(topicId, session, elapsed);
+  }, [session, topicId]);
 
   const selectAnswer = useCallback((answer: string) => {
     setSession(prev => {
@@ -98,13 +193,17 @@ export function useQuizSession(allQuestions: Question[], count: number, shuffle:
     const wrong = session.questionStates.filter(s => s.state === 'wrong').length;
     const skipped = session.questionStates.filter(s => s.state === 'unanswered').length;
     const total = session.questions.length;
-    const timeSpent = Math.floor((Date.now() - startTimeRef.current) / 1000);
+    const timeSpent = restoredElapsedRef.current + Math.floor((Date.now() - startTimeRef.current) / 1000);
     const wrongQuestions = session.questions
       .filter((_, i) => session.questionStates[i].state === 'wrong')
       .map(q => q.id);
 
     return { correct, wrong, skipped, total, timeSpent, wrongQuestions, scorePercent: Math.round((correct / total) * 100) };
   }, [session.questionStates, session.questions]);
+
+  const getElapsedSeconds = useCallback(() => {
+    return restoredElapsedRef.current + Math.floor((Date.now() - startTimeRef.current) / 1000);
+  }, []);
 
   return {
     session,
@@ -115,5 +214,6 @@ export function useQuizSession(allQuestions: Question[], count: number, shuffle:
     dismissExplanation,
     finishQuiz,
     getResults,
+    getElapsedSeconds,
   };
 }

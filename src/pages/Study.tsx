@@ -7,11 +7,12 @@ import { useQuizProgress } from '../hooks/useQuizProgress';
 
 interface StudyProps {
   onStartQuiz: (topicId: string) => void;
+  onStartReview: (topicId: string) => void;
 }
 
 type Tab = 'acsm' | 'cscs';
 
-export function Study({ onStartQuiz }: StudyProps) {
+export function Study({ onStartQuiz, onStartReview }: StudyProps) {
   const [tab, setTab] = useState<Tab>('acsm');
   const { getProgress } = useQuizProgress();
 
@@ -39,14 +40,22 @@ export function Study({ onStartQuiz }: StudyProps) {
 
       {/* Topic Grid */}
       <div className="flex flex-col gap-3">
-        {topics.map(topic => (
-          <TopicCard
-            key={topic.id}
-            topic={topic}
-            progress={getProgress(topic.id)}
-            onStart={() => onStartQuiz(topic.id)}
-          />
-        ))}
+        {topics.map(topic => {
+          const progress = getProgress(topic.id);
+          const lastAttempt = progress?.attempts[progress.attempts.length - 1];
+          const wrongCount = lastAttempt?.wrongQuestions?.length ?? 0;
+
+          return (
+            <TopicCard
+              key={topic.id}
+              topic={topic}
+              progress={progress}
+              wrongCount={wrongCount}
+              onStart={() => onStartQuiz(topic.id)}
+              onReview={() => onStartReview(topic.id)}
+            />
+          );
+        })}
       </div>
     </div>
   );
@@ -55,10 +64,12 @@ export function Study({ onStartQuiz }: StudyProps) {
 interface TopicCardProps {
   topic: TopicMeta;
   progress?: { bestScore: number; lastAttempted: string; attempts: { date: string }[] };
+  wrongCount: number;
   onStart: () => void;
+  onReview: () => void;
 }
 
-function TopicCard({ topic, progress, onStart }: TopicCardProps) {
+function TopicCard({ topic, progress, wrongCount, onStart, onReview }: TopicCardProps) {
   const isAvailable = topic.status === 'available';
 
   return (
@@ -92,6 +103,19 @@ function TopicCard({ topic, progress, onStart }: TopicCardProps) {
                 {progress.attempts.length} attempt{progress.attempts.length !== 1 ? 's' : ''}
               </span>
             </div>
+          )}
+
+          {isAvailable && wrongCount > 0 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onReview();
+              }}
+              className="mt-2 inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border-none cursor-pointer"
+              style={{ background: '#FFF3E0', color: '#E67E00' }}
+            >
+              🔁 Review {wrongCount} wrong
+            </button>
           )}
         </div>
         {isAvailable && (
